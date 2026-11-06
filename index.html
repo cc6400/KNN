@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交互式 KNN 分类可视化 Demo</title>
+    <style>
+        :root {
+            --blue: #2980b9;
+            --blue-bg: rgba(41, 128, 185, 0.15);
+            --red: #e74c3c;
+            --red-bg: rgba(231, 76, 60, 0.15);
+            --green: #27ae60;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .app-container {
+            display: flex;
+            background: #1e2b38;
+            border-radius: 16px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            overflow: hidden;
+            width: 1000px;
+            max-width: 100%;
+            flex-wrap: wrap;
+        }
+
+        /* 左侧画布区 */
+        .canvas-area {
+            position: relative;
+            background: #fff;
+            flex: 1;
+            min-width: 600px;
+            min-height: 600px;
+        }
+
+        canvas {
+            display: block;
+            cursor: crosshair;
+        }
+
+        /* 提示信息 */
+        .hint {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        /* 右侧控制区 */
+        .control-panel {
+            width: 320px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+            background: #1e2b38;
+        }
+
+        h1 {
+            font-size: 20px;
+            color: #fff;
+            border-bottom: 1px solid #34495e;
+            padding-bottom: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-group label {
+            font-size: 14px;
+            color: #bdc3c7;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* 滑块样式 */
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type="range"]:focus {
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: #34495e;
+            border-radius: 4px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: var(--green);
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(39, 174, 96, 0.5);
+            transition: transform 0.1s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .result-box {
+            background: #2c3e50;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            border: 1px solid #34495e;
+        }
+
+        .result-title {
+            font-size: 14px;
+            color: #bdc3c7;
+            margin-bottom: 10px;
+        }
+
+        .result-value {
+            font-size: 24px;
+            font-weight: bold;
+            transition: color 0.3s;
+        }
+        
+        .result-value.is-blue { color: var(--blue); }
+        .result-value.is-red { color: var(--red); }
+
+        .legend {
+            display: flex;
+            justify-content: space-around;
+            font-size: 13px;
+            color: #bdc3c7;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .icon {
+            width: 14px;
+            height: 14px;
+            border-radius: 2px;
+        }
+        .icon.blue { background: var(--blue); }
+        .icon.red { background: var(--red); border-radius: 50%; }
+        .icon.green { background: var(--green); border-radius: 50%; }
+
+        .btn {
+            padding: 12px;
+            background: #34495e;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: auto;
+        }
+        .btn:hover {
+            background: #46627f;
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- 左侧画布 -->
+    <div class="canvas-area">
+        <canvas id="knnCanvas" width="650" height="600"></canvas>
+        <div class="hint">按住 <b>Shift</b> + 点击画布添加【蓝色方块】，按住 <b>Alt</b> + 点击添加【红色三角】</div>
+    </div>
+
+    <!-- 右侧控制面板 -->
+    <div class="control-panel">
+        <h1>KNN 交互可视化</h1>
+        
+        <div class="control-group">
+            <label>
+                <span>近邻数量 (K值)</span>
+                <span id="kValueDisplay" style="color: var(--green); font-weight: bold; font-size: 18px;">5</span>
+            </label>
+            <input type="range" id="kSlider" min="1" max="15" value="5" step="1">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #7f8c8d;">
+                <span>1 (复杂)</span>
+                <span>15 (平滑)</span>
+            </div>
+        </div>
+
+        <div class="result-box">
+            <div class="result-title">待测绿点预测结果</div>
+            <div id="predictionResult" class="result-value is-blue">蓝色正方形</div>
+            
+            <div class="legend" style="margin-top: 20px;">
+                <div class="legend-item"><div class="icon blue"></div>类别 A</div>
+                <div class="legend-item"><div class="icon red"></div>类别 B</div>
+                <div class="legend-item"><div class="icon green"></div>待测点</div>
+            </div>
+        </div>
+
+        <div style="font-size: 12px; color: #7f8c8d; line-height: 1.6;">
+            * 背景色代表模型对整个区域的“决策边界”。<br>
+            * 实线连接目标点最近的 K 个邻居。<br>
+            * 观察 K 值变化时，边界的平滑程度。
+        </div>
+
+        <button class="btn" onclick="resetData()">恢复初始数据</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('knnCanvas');
+    const ctx = canvas.getContext('2d');
+    const kSlider = document.getElementById('kSlider');
+    const kDisplay = document.getElementById('kValueDisplay');
+    const resultDisplay = document.getElementById('predictionResult');
+
+    // 颜色配置
+    const COLOR_BLUE = '#2980b9';
+    const COLOR_BLUE_BG = 'rgba(41, 128, 185, 0.1)';
+    const COLOR_RED = '#e74c3c';
+    const COLOR_RED_BG = 'rgba(231, 76, 60, 0.1)';
+    const COLOR_GREEN = '#27ae60';
+
+    // 数据点：0表示蓝色方块，1表示红色三角
+    let trainData = [];
+    let targetPoint = { x: 325, y: 350 }; // 画布中心偏下
+
+    // 初始化高仿原图数据
+    function initDefaultData() {
+        trainData = [
+            // 蓝色方块 (左侧，围绕目标点偏左)
+            { x: 150, y: 200, class: 0 },
+            { x: 180, y: 350, class: 0 },
+            { x: 120, y: 480, class: 0 },
+            { x: 280, y: 250, class: 0 },
+            { x: 250, y: 420, class: 0 }, // 在 K=3 圆内
+            // 红色三角 (右侧及上方，围绕目标点偏右)
+            { x: 400, y: 150, class: 1 },
+            { x: 520, y: 200, class: 1 },
+            { x: 480, y: 320, class: 1 }, // 在 K=3 圆内
+            { x: 420, y: 400, class: 1 }, // 在 K=3 圆内
+            { x: 550, y: 450, class: 1 }
+        ];
+        draw();
+    }
+
+    // 绘制图形
+    function draw() {
+        // 1. 清空画布
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const K = parseInt(kSlider.value);
+        kDisplay.innerText = K;
+
+        // 2. 渲染决策边界 (利用降采样提升性能)
+        renderDecisionBoundary(K);
+
+        // 3. 计算所有距离并排序
+        let distances = trainData.map((point, index) => {
+            let dist = Math.sqrt(Math.pow(point.x - targetPoint.x, 2) + Math.pow(point.y - targetPoint.y, 2));
+            return { index, dist, point };
+        }).sort((a, b) => a.dist - b.dist);
+
+        // 4. 找出最近的 K 个邻居
+        let kNearest = distances.slice(0, Math.min(K, distances.length));
+        
+        // 5. 绘制连线
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]); // 虚线
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+        kNearest.forEach(item => {
+            ctx.beginPath();
+            ctx.moveTo(targetPoint.x, targetPoint.y);
+            ctx.lineTo(item.point.x, item.point.y);
+            ctx.stroke();
+        });
+        ctx.setLineDash([]); // 恢复实线
+
+        // 6. 绘制训练数据点
+        trainData.forEach(point => {
+            // 判断是否是 K 个邻居之一，高亮显示
+            const isNeighbor = kNearest.some(n => n.point === point);
+            
+            ctx.beginPath();
+            if (point.class === 0) {
+                // 蓝色正方形
+                ctx.fillStyle = COLOR_BLUE;
+                ctx.fillRect(point.x - 8, point.y - 8, 16, 16);
+                if(isNeighbor) {
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(point.x - 10, point.y - 10, 20, 20);
+                }
+            } else {
+                // 红色三角形
+                ctx.fillStyle = COLOR_RED;
+                ctx.moveTo(point.x, point.y - 10);
+                ctx.lineTo(point.x + 10, point.y + 8);
+                ctx.lineTo(point.x - 10, point.y + 8);
+                ctx.closePath();
+                ctx.fill();
+                if(isNeighbor) {
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+            }
+        });
+
+        // 7. 投票决定目标点类别
+        let class0Votes = 0;
+        let class1Votes = 0;
+        kNearest.forEach(item => {
+            if (item.point.class === 0) class0Votes++;
+            else class1Votes++;
+        });
+
+        let predictedClass = class0Votes > class1Votes ? 0 : 1;
+        
+        // 更新UI
+        if (predictedClass === 0) {
+            resultDisplay.innerText = "类别 A (蓝色正方形)";
+            resultDisplay.className = "result-value is-blue";
+        } else {
+            resultDisplay.innerText = "类别 B (红色三角形)";
+            resultDisplay.className = "result-value is-red";
+        }
+
+        // 8. 绘制目标点 (绿色圆点)
+        ctx.beginPath();
+        ctx.arc(targetPoint.x, targetPoint.y, 10, 0, Math.PI * 2);
+        ctx.fillStyle = COLOR_GREEN;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // 绘制外围的 K 圈（可视化距离范围）
+        const maxDist = kNearest[kNearest.length - 1].dist;
+        ctx.beginPath();
+        ctx.arc(targetPoint.x, targetPoint.y, maxDist, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(39, 174, 96, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        // 绘制问号
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', targetPoint.x, targetPoint.y + 1);
+    }
+
+    // 优化：利用块状降采样绘制决策边界背景
+    function renderDecisionBoundary(K) {
+        const step = 8; // 每 8x8 像素采样一次，避免性能问题
+        const cols = Math.ceil(canvas.width / step);
+        const rows = Math.ceil(canvas.height / step);
+
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                let px = i * step + step / 2;
+                let py = j * step + step / 2;
+
+                // 计算该像素点到所有训练点的距离
+                let dists = trainData.map(p => {
+                    return {
+                        dist: Math.sqrt(Math.pow(p.x - px, 2) + Math.pow(p.y - py, 2)),
+                        class: p.class
+                    };
+                }).sort((a, b) => a.dist - b.dist);
+
+                // 取前 K 个
+                let kNearest = dists.slice(0, K);
+                let votes0 = 0, votes1 = 0;
+                kNearest.forEach(n => {
+                    if (n.class === 0) votes0++;
+                    else votes1++;
+                });
+
+                // 涂色
+                ctx.fillStyle = votes0 > votes1 ? COLOR_BLUE_BG : COLOR_RED_BG;
+                ctx.fillRect(i * step, j * step, step, step);
+            }
+        }
+    }
+
+    // 交互事件
+    kSlider.addEventListener('input', draw);
+
+    // 鼠标点击添加数据点
+    canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // 如果点得太靠近目标点，忽略
+        if (Math.abs(x - targetPoint.x) < 20 && Math.abs(y - targetPoint.y) < 20) return;
+
+        if (e.shiftKey) {
+            // 按住 Shift 添加蓝点
+            trainData.push({ x, y, class: 0 });
+            draw();
+        } else if (e.altKey) {
+            // 按住 Alt 添加红点
+            trainData.push({ x, y, class: 1 });
+            draw();
+        }
+    });
+
+    // 重置
+    window.resetData = function() {
+        initDefaultData();
+    }
+
+    // 启动
+    initDefaultData();
+
+</script>
+</body>
+</html>
